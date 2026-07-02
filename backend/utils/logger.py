@@ -1,25 +1,24 @@
 import logging
 import sys
 
+_LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+_configured = False
+
+
+def _configure_root():
+    global _configured
+    if _configured:
+        return
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_DATE_FORMAT))
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(handler)
+    _configured = True
+
 
 def get_logger(name: str) -> logging.Logger:
-    """
-    Returns a configured logger for the given module name.
-    Usage: logger = get_logger(__name__)
-    """
-    logger = logging.getLogger(name)
-
-    if not logger.handlers:
-        logger.setLevel(logging.DEBUG)
-
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(logging.DEBUG)
-
-        formatter = logging.Formatter(
-            fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-
-    return logger
+    _configure_root()
+    return logging.getLogger(name)

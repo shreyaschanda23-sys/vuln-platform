@@ -1,54 +1,34 @@
+"""ffuf wrapper — directory/file fuzzing."""
 from scanners.base import BaseScannerWrapper
-from utils.logger import get_logger
-
-logger = get_logger(__name__)
+from utils.parser import parse_jsonl
+from utils.subprocess import CommandResult
 
 
 class FfufScanner(BaseScannerWrapper):
-    """
-    Wrapper for ffuf — directory and path bruteforcing.
-    """
-    tool_name = "ffuf"
-    timeout = 300
+    binary_name = "ffuf"
+    default_timeout = 300
 
-    def scan(self, target: str, **kwargs) -> list[dict]:
-        """
-        Run ffuf directory bruteforce on a target.
-        Returns list of discovered paths.
-        """
+    def build_args(self, target: str, **kwargs) -> list[str]:
         wordlist = kwargs.get(
-            "wordlist",
-            "/usr/share/wordlists/dirb/common.txt"
+            "wordlist", "/usr/share/wordlists/seclists/Discovery/Web-Content/common.txt"
         )
-
         url = target.rstrip("/") + "/FUZZ"
-
-        command = [
-            "ffuf",
+        return [
+            self.binary_name,
             "-u", url,
             "-w", wordlist,
+            "-mc", "200,204,301,302,307,401,403",
             "-json",
-            "-silent",
-            "-mc", "200,201,204,301,302,403"
+            "-s",
         ]
 
-        logger.info(f"Starting ffuf scan on {target}")
-        stdout, stderr, returncode = self.run(command)
-
-        if not stdout:
-            return []
-
-        data = self.parse_json(stdout)
-        results = data.get("results", [])
-
-        endpoints = []
-        for item in results:
-            endpoints.append({
-                "url": item.get("url", ""),
-                "status_code": item.get("status", 0),
-                "length": item.get("length", 0),
-                "tool": "ffuf"
-            })
-
-        logger.info(f"ffuf found {len(endpoints)} paths on {target}")
-        return endpoints
+    def parse_output(self, result: CommandResult) -> list[dict]:
+        entries = parse_jsonl(result.stdout)
+        return [
+            {
+                "url": e.get("url"),
+                "status_code": e.get("status"),
+                "length": e.get("length"),
+            }
+            for e in entries if e.get("url")
+        ]

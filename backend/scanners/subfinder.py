@@ -1,46 +1,26 @@
+"""Subfinder wrapper — passive subdomain enumeration."""
 from scanners.base import BaseScannerWrapper
-from utils.logger import get_logger
-
-logger = get_logger(__name__)
+from utils.parser import parse_jsonl
+from utils.subprocess import CommandResult
 
 
 class SubfinderScanner(BaseScannerWrapper):
-    """
-    Wrapper for subfinder — passive subdomain enumeration.
-    https://github.com/projectdiscovery/subfinder
-    """
-    tool_name = "subfinder"
-    timeout = 120
+    binary_name = "subfinder"
+    default_timeout = 180
 
-    def scan(self, target: str, **kwargs) -> list[dict]:
-        """
-        Run subfinder against a domain.
-        Returns list of subdomains found.
-        """
-        command = [
-            "subfinder",
+    def build_args(self, target: str, **kwargs) -> list[str]:
+        return [
+            self.binary_name,
             "-d", target,
             "-json",
-            "-silent"
+            "-silent",
+            "-all",
         ]
 
-        logger.info(f"Starting subfinder scan on {target}")
-        stdout, stderr, returncode = self.run(command)
-
-        if returncode != 0 and not stdout:
-            logger.error(f"subfinder failed: {stderr}")
-            return []
-
-        results = self.parse_json_lines(stdout)
-
-        subdomains = []
-        for item in results:
-            subdomains.append({
-                "host": item.get("host", ""),
-                "source": item.get("source", "subfinder"),
-                "ip": item.get("ip", ""),
-                "tool": "subfinder"
-            })
-
-        logger.info(f"subfinder found {len(subdomains)} subdomains for {target}")
-        return subdomains
+    def parse_output(self, result: CommandResult) -> list[dict]:
+        entries = parse_jsonl(result.stdout)
+        return [
+            {"name": e.get("host"), "source": e.get("source")}
+            for e in entries
+            if e.get("host")
+        ]

@@ -1,71 +1,34 @@
+"""httpx wrapper — live host probing and tech detection."""
 from scanners.base import BaseScannerWrapper
-from utils.logger import get_logger
-
-logger = get_logger(__name__)
+from utils.parser import parse_jsonl
+from utils.subprocess import CommandResult
 
 
 class HttpxScanner(BaseScannerWrapper):
-    """
-    Wrapper for httpx — HTTP probing and tech detection.
-    https://github.com/projectdiscovery/httpx
-    """
-    tool_name = "httpx"
-    timeout = 120
+    binary_name = "httpx"
+    default_timeout = 180
 
-    def is_installed(self) -> bool:
-        """Override to check Go bin path."""
-        import subprocess
-        for path in ["httpx", "/home/whyyy/go/bin/httpx"]:
-            try:
-                result = subprocess.run(
-                    [path, "-version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                if result.returncode == 0:
-                    self._httpx_path = path
-                    return True
-            except Exception:
-                continue
-        return False
-
-    def scan(self, target: str, **kwargs) -> list[dict]:
-        """
-        Probe a list of URLs or a single target with httpx.
-        Returns list of live endpoints with metadata.
-        """
-        httpx_path = getattr(self, '_httpx_path', '/home/whyyy/go/bin/httpx')
-
-        command = [
-            httpx_path,
+    def build_args(self, target: str, **kwargs) -> list[str]:
+        return [
+            self.binary_name,
             "-u", target,
             "-json",
             "-silent",
             "-title",
             "-tech-detect",
             "-status-code",
-            "-follow-redirects"
+            "-follow-redirects",
         ]
 
-        logger.info(f"Starting httpx probe on {target}")
-        stdout, stderr, returncode = self.run(command)
-
-        if not stdout:
-            return []
-
-        results = self.parse_json_lines(stdout)
-
-        endpoints = []
-        for item in results:
-            endpoints.append({
-                "url": item.get("url", ""),
-                "status_code": item.get("status_code", 0),
-                "title": item.get("title", ""),
-                "tech_stack": ", ".join(item.get("tech", [])),
+    def parse_output(self, result: CommandResult) -> list[dict]:
+        entries = parse_jsonl(result.stdout)
+        return [
+            {
+                "url": e.get("url"),
+                "status_code": e.get("status_code"),
+                "title": e.get("title"),
+                "tech_stack": ",".join(e.get("tech", [])) if e.get("tech") else None,
                 "is_live": True,
-                "tool": "httpx"
-            })
-
-        logger.info(f"httpx found {len(endpoints)} live endpoints")
-        return endpoints
+            }
+            for e in entries if e.get("url")
+        ]

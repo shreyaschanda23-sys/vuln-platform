@@ -1,46 +1,39 @@
+"""sqlmap wrapper — SQL injection detection."""
 from scanners.base import BaseScannerWrapper
-from utils.logger import get_logger
-
-logger = get_logger(__name__)
+from utils.subprocess import CommandResult
 
 
 class SqlmapScanner(BaseScannerWrapper):
-    """
-    Wrapper for sqlmap — SQL injection detection.
-    """
-    tool_name = "sqlmap"
-    timeout = 300
+    binary_name = "sqlmap"
+    default_timeout = 600
 
-    def scan(self, target: str, **kwargs) -> list[dict]:
-        """
-        Run sqlmap against a target URL.
-        Returns list of SQL injection findings.
-        """
-        command = [
-            "sqlmap",
+    def build_args(self, target: str, **kwargs) -> list[str]:
+        return [
+            self.binary_name,
             "-u", target,
             "--batch",
-            "--output-dir=/tmp/sqlmap",
-            "--forms",
-            "--level=2",
-            "--risk=1",
-            "--json-output=/tmp/sqlmap_output.json",
-            "--quiet"
+            "--random-agent",
+            "--level", str(kwargs.get("level", 1)),
+            "--risk", str(kwargs.get("risk", 1)),
+            "--output-dir", "/tmp/sqlmap",
         ]
 
-        logger.info(f"Starting sqlmap scan on {target}")
-        stdout, stderr, returncode = self.run(command)
+    def parse_output(self, result: CommandResult) -> list[dict]:
+        vulnerable = "sqlmap identified the following injection point" in result.stdout \
+            or "Parameter:" in result.stdout
 
-        findings = []
-        if "injectable" in stdout.lower() or "vulnerable" in stdout.lower():
-            findings.append({
-                "host": target,
-                "severity": "high",
-                "template_id": "sqli-detected",
-                "description": "SQL injection vulnerability detected by sqlmap",
-                "evidence": stdout[:500],
-                "tool": "sqlmap"
-            })
+        if not vulnerable:
+            return []
 
-        logger.info(f"sqlmap found {len(findings)} SQLi issues on {target}")
-        return findings
+        params = []
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("Parameter:"):
+                params.append(line.replace("Parameter:", "").strip())
+
+        return [{
+            "template_id": "sqlmap-sqli",
+            "severity": "high",
+            "evidence": ", ".join(params) if params else "SQL injection confirmed",
+            "description": "SQL injection vulnerability detected by sqlmap",
+        }]

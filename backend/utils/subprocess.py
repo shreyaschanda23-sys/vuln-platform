@@ -1,52 +1,68 @@
-import subprocess
+"""
+Safe subprocess runner for invoking recon/scan tools. Enforces timeouts,
+captures stdout/stderr, and never raises on non-zero exit — callers check
+the returned result instead, since scanners routinely exit non-zero on
+things like "no results found."
+"""
+import asyncio
+import shlex
+from dataclasses import dataclass
+
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+DEFAULT_TIMEOUT = 300  # seconds
 
-def run_command(
-    command: list[str],
-    timeout: int = 300,
-    cwd: str = None
-) -> tuple[str, str, int]:
+
+@dataclass
+class CommandResult:
+    command: str
+    returncode: int
+    stdout: str
+    stderr: str
+    timed_out: bool = False
+
+    @property
+    def ok(self) -> bool:
+        return self.returncode == 0 and not self.timed_out
+
+
+async def run_command(
+    args: list[str],
+    timeout: int = DEFAULT_TIMEOUT,
+    cwd: str | None = None,
+) -> CommandResult:
     """
-    Safe subprocess runner with timeout and logging.
-    Returns: (stdout, stderr, returncode)
+    Run a command given as an argv list (never a shell string — avoids
+    shell injection entirely since args are passed directly to exec).
     """
-    logger.info(f"Executing: {' '.join(command)}")
+    cmd_str = " ".join(shlex.quote(a) for a in args)
+    logger.info(f"Running: {cmd_str}")
 
     try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=cwd
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
         )
-        return result.stdout, result.stderr, result.returncode
-
-    except subprocess.TimeoutExpired:
-        logger.error(f"Command timed out after {timeout}s: {' '.join(command)}")
-        raise
-
     except FileNotFoundError:
-        logger.error(f"Command not found: {command[0]}")
-        raise
+        logger.error(f"Binary not found: {args[0]}")
+        return CommandResult(command=cmd_str, returncode=127, stdout="", stderr=f"{args[0]}: command not found")
 
-    except Exception as e:
-        logger.error(f"Command failed: {e}")
-        raise
-
-
-def is_tool_installed(tool_name: str) -> bool:
-    """Check if a CLI tool is available on the system."""
     try:
-        result = subprocess.run(
-            ["which", tool_name],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        logger.warning(f"Timed out after {timeout}s: {cmd_str}")
+        return CommandResult(command=cmd_str, returncode=-1, stdout="", stderr="timeout", timed_out=True)
+
+    stdout = stdout_bytes.decode(errors="replace")
+    stderr = stderr_bytes.decode(errors="replace")
+
+    if proc.returncode != 0:
+        logger.warning(f"Non-zero exit ({proc.returncode}): {cmd_str}")
+
+    return CommandResult(command=cmd_str, returncode=proc.returncode, stdout=stdout, stderr=stderr)
