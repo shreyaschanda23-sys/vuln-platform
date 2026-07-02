@@ -2,6 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 
+from api.routes import auth, domains, scans, findings, reports
+from api.websocket import router as websocket_router
+
 app = FastAPI(
     title="Vuln Platform",
     description="Automated vulnerability management platform",
@@ -15,6 +18,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth.router)
+app.include_router(domains.router)
+app.include_router(scans.router)
+app.include_router(findings.router)
+app.include_router(reports.router)
+app.include_router(websocket_router)
 
 
 @app.get("/")
