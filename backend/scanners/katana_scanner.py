@@ -6,16 +6,17 @@ from utils.subprocess import CommandResult
 
 class KatanaScanner(BaseScannerWrapper):
     binary_name = "katana"
-    default_timeout = 300
+    default_timeout = 120
 
     def build_args(self, target: str, **kwargs) -> list[str]:
-        depth = kwargs.get("depth", "3")
+        depth = kwargs.get("depth", "2")
         return [
             self.binary_name,
             "-u", target,
             "-d", depth,
             "-silent",
             "-jc",
+            "-timeout", "10",
         ]
 
     def parse_output(self, result: CommandResult) -> list[dict]:

@@ -97,11 +97,12 @@ def _load_kev_catalog(client: httpx.Client) -> set[str]:
 def is_in_kev(cve_id: str, client: httpx.Client) -> bool:
     return cve_id in _load_kev_catalog(client)
 
-
 def enrich_finding(finding: Finding, client: httpx.Client) -> Finding:
     """Enrich a single finding in-place with CVSS, EPSS, and KEV status."""
     if not finding.cve_id:
         return finding
+
+    finding.cve_id = finding.cve_id.upper()
 
     if finding.cvss_score is None:
         finding.cvss_score = fetch_cvss(finding.cve_id, client)

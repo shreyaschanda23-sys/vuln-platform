@@ -6,6 +6,7 @@ from api.schemas import ScanCreate, ScanResponse
 from models.scan import Scan, ScanStatus
 from models.domain import Domain
 from models.user import User, UserRole
+from services.orchestrator import start_scan_pipeline
 
 router = APIRouter(prefix="/api/scans", tags=["scans"])
 
@@ -37,9 +38,7 @@ def create_scan(
     db.commit()
     db.refresh(scan)
 
-    # Hook point for Phase 3's Celery orchestrator, e.g.:
-    # from worker.tasks import run_scan_pipeline
-    # run_scan_pipeline.delay(scan.id)
+    start_scan_pipeline(scan.id)
 
     return scan
 

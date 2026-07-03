@@ -46,6 +46,7 @@ class DomainResponse(BaseModel):
 # ---- Scans ----
 class ScanCreate(BaseModel):
     domain_id: int
+    scanners: list[str] | None = None  # None = run all
 
 
 class ScanResponse(BaseModel):

@@ -35,6 +35,6 @@ async def scan_progress_socket(websocket: WebSocket, scan_id: int):
     await manager.connect(scan_id, websocket)
     try:
         while True:
-            await websocket.receive_text()  # keep-alive; client doesn't need to send anything meaningful
+            await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(scan_id, websocket)

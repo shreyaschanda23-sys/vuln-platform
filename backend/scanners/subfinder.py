@@ -14,7 +14,6 @@ class SubfinderScanner(BaseScannerWrapper):
             "-d", target,
             "-json",
             "-silent",
-            "-all",
         ]
 
     def parse_output(self, result: CommandResult) -> list[dict]:

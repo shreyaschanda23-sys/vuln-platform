@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 
 from api.routes import auth, domains, scans, findings, reports
-from api.websocket import router as websocket_router
+from api.routes.websocket import router as websocket_router
 
 app = FastAPI(
     title="Vuln Platform",

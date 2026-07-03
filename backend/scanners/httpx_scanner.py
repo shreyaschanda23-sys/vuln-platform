@@ -5,7 +5,7 @@ from utils.subprocess import CommandResult
 
 
 class HttpxScanner(BaseScannerWrapper):
-    binary_name = "httpx"
+    binary_name = "/home/whyyy/go/bin/httpx"
     default_timeout = 180
 
     def build_args(self, target: str, **kwargs) -> list[str]:
