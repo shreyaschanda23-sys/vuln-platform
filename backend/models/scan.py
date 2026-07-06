@@ -35,6 +35,7 @@ class Scan(Base):
     scanners      = Column(JSON, nullable=True)
     started_at    = Column(DateTime, default=datetime.utcnow)
     finished_at   = Column(DateTime, nullable=True)
+    task_id = Column(String, nullable=True)
     error_message = Column(String, nullable=True)
 
     domain   = relationship("Domain", back_populates="scans")

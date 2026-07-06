@@ -1,6 +1,18 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0a0a0b;
+  --color-bg-surface: #111113;
+  --color-bg-elevated: #18181b;
+  --color-bg-border: #27272a;
+  --color-accent: #22d3ee;
+  --color-accent-dim: #0e7490;
+  --color-severity-critical: #dc2626;
+  --color-severity-high: #ea580c;
+  --color-severity-medium: #ca8a04;
+  --color-severity-low: #2563eb;
+  --color-severity-info: #71717a;
+}
 
 body { background-color: #0a0a0b; color: #e4e4e7; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }

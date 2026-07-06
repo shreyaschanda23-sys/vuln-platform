@@ -17,8 +17,7 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-def start_scan_pipeline(scan_id: int) -> str:
-    """Kick off the full async pipeline for a scan. Returns the Celery chain's task ID."""
+def start_scan_pipeline(scan_id: int, scanners: list[str] | None = None) -> str:
     db = SessionLocal()
     try:
         scan = db.query(Scan).filter(Scan.id == scan_id).first()
@@ -30,15 +29,17 @@ def start_scan_pipeline(scan_id: int) -> str:
             raise ValueError(f"Domain {scan.domain_id} not found")
 
         pipeline = chain(
-            asset_discovery_task.si(scan_id, domain.name),
-            port_scan_task.si(scan_id, domain.name),
-            live_hosts_task.si(scan_id, domain.name),
-            crawl_task.si(scan_id),
-            vuln_scan_task.si(scan_id),
+            asset_discovery_task.si(scan_id, domain.name, scanners),
+            port_scan_task.si(scan_id, domain.name, scanners),
+            live_hosts_task.si(scan_id, domain.name, scanners),
+            crawl_task.si(scan_id, scanners),
+            vuln_scan_task.si(scan_id, scanners),
             post_processing_task.si(scan_id),
         )
 
         result = pipeline.apply_async()
+        scan.task_id = result.id
+        db.commit()
         logger.info(f"Started pipeline for scan {scan_id}, task_id={result.id}")
         return result.id
     finally:

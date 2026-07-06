@@ -66,6 +66,9 @@ def parse_nmap_xml(raw: str) -> list[dict]:
 def parse_masscan_json(raw: str) -> list[dict]:
     """Parse masscan -oJ output into {host, port_number, protocol}."""
     results = []
+    raw = raw.strip()
+    if not raw or raw in ("[]", "[\n]"):
+        return results
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
@@ -81,5 +84,4 @@ def parse_masscan_json(raw: str) -> list[dict]:
                 "protocol": port_info.get("proto", "tcp"),
                 "state": port_info.get("status", "open"),
             })
-
     return results

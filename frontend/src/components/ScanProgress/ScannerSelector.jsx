@@ -10,8 +10,9 @@ const SCANNERS = [
 
 export default function ScannerSelector({ selected, onChange }) {
   const allSelected = selected === null;
+  const noneSelected = Array.isArray(selected) && selected.length === 0;
 
-  const toggleAll = () => onChange(allSelected ? SCANNERS.map((s) => s.id) : null);
+  const toggleAll = () => onChange(allSelected ? [] : null);
 
   const toggleOne = (id) => {
     const current = selected ?? SCANNERS.map((s) => s.id);
@@ -23,11 +24,7 @@ export default function ScannerSelector({ selected, onChange }) {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-xs text-zinc-500 uppercase tracking-wide">Scanners</span>
-        <button
-          type="button"
-          onClick={toggleAll}
-          className="text-xs text-accent hover:underline"
-        >
+        <button type="button" onClick={toggleAll} className="text-xs text-accent hover:underline">
           {allSelected ? 'Deselect all' : 'Select all'}
         </button>
       </div>
@@ -55,6 +52,9 @@ export default function ScannerSelector({ selected, onChange }) {
           );
         })}
       </div>
+      {noneSelected && (
+        <p className="text-xs text-amber-400">No scanners selected — scan will run nothing.</p>
+      )}
     </div>
   );
 }

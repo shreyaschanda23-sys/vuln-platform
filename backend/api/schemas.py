@@ -52,6 +52,7 @@ class ScanCreate(BaseModel):
 class ScanResponse(BaseModel):
     id: int
     domain_id: int
+    domain_name: str
     status: ScanStatus
     current_stage: ScanStage | None
     started_at: datetime
