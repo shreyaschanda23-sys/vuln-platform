@@ -7,10 +7,12 @@ from worker.tasks import (
     live_hosts_task,
     crawl_task,
     vuln_scan_task,
+    deep_scan_task,
     post_processing_task,
+    mark_scan_failed_task,
 )
 from api.deps import SessionLocal
-from models.scan import Scan
+from models.scan import Scan, ScanStatus
 from models.domain import Domain
 from utils.logger import get_logger
 
@@ -34,13 +36,22 @@ def start_scan_pipeline(scan_id: int, scanners: list[str] | None = None) -> str:
             live_hosts_task.si(scan_id, domain.name, scanners),
             crawl_task.si(scan_id, scanners),
             vuln_scan_task.si(scan_id, scanners),
+            deep_scan_task.si(scan_id, scanners),
             post_processing_task.si(scan_id),
         )
 
-        result = pipeline.apply_async()
-        scan.task_id = result.id
+        # link_error ensures a crash anywhere in the chain marks the scan
+        # failed instead of leaving it stuck in "running" indefinitely.
+        result = pipeline.apply_async(
+            link_error=mark_scan_failed_task.s(scan_id)
+        )
+
+        scan.status = ScanStatus.running
         db.commit()
         logger.info(f"Started pipeline for scan {scan_id}, task_id={result.id}")
         return result.id
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

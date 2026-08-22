@@ -29,8 +29,8 @@ def parse_lines(raw: str) -> list[str]:
 
 
 def parse_nmap_xml(raw: str) -> list[dict]:
-    """Parse nmap -oX output into a list of {host, port, protocol, service, version, state}."""
     results = []
+    os_name = None
     try:
         root = ET.fromstring(raw)
     except ET.ParseError as e:
@@ -43,6 +43,12 @@ def parse_nmap_xml(raw: str) -> list[dict]:
         if not host:
             continue
 
+        os_el = host_el.find("os")
+        if os_el is not None:
+            match = os_el.find("osmatch")
+            if match is not None:
+                os_name = match.get("name")
+
         ports_el = host_el.find("ports")
         if ports_el is None:
             continue
@@ -50,7 +56,6 @@ def parse_nmap_xml(raw: str) -> list[dict]:
         for port_el in ports_el.findall("port"):
             state_el = port_el.find("state")
             service_el = port_el.find("service")
-
             results.append({
                 "host": host,
                 "port_number": int(port_el.get("portid")),
@@ -58,10 +63,10 @@ def parse_nmap_xml(raw: str) -> list[dict]:
                 "state": state_el.get("state") if state_el is not None else "unknown",
                 "service": service_el.get("name") if service_el is not None else None,
                 "version": service_el.get("product") if service_el is not None else None,
+                "os": os_name,
             })
 
     return results
-
 
 def parse_masscan_json(raw: str) -> list[dict]:
     """Parse masscan -oJ output into {host, port_number, protocol}."""

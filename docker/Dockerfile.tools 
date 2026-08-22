@@ -1,0 +1,15 @@
+FROM golang:1.22-bookworm AS tools
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nmap masscan sqlmap git curl && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
+    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest && \
+    go install -v github.com/projectdiscovery/katana/cmd/katana@latest && \
+    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
+    go install -v github.com/ffuf/ffuf/v2@latest && \
+    go install -v github.com/hahwul/dalfox/v2@latest && \
+    go install -v github.com/owasp-amass/amass/v4/...@master
+
+ENV PATH="/root/go/bin:${PATH}"

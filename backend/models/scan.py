@@ -32,11 +32,12 @@ class Scan(Base):
     domain_id     = Column(Integer, ForeignKey("domains.id"), nullable=False)
     status        = Column(Enum(ScanStatus), default=ScanStatus.pending)
     current_stage = Column(Enum(ScanStage), nullable=True)
-    scanners      = Column(JSON, nullable=True)
     started_at    = Column(DateTime, default=datetime.utcnow)
     finished_at   = Column(DateTime, nullable=True)
-    task_id = Column(String, nullable=True)
     error_message = Column(String, nullable=True)
+    scanners      = Column(JSON, nullable=True)   # already exists in DB — now declared on the model
+    task_id       = Column(String, nullable=True) # NEW
+    emails_found  = Column(JSON, nullable=True)   # NEW
 
     domain   = relationship("Domain", back_populates="scans")
     findings = relationship("Finding", back_populates="scan")

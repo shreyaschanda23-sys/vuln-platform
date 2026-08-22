@@ -1,0 +1,53 @@
+# docker/Dockerfile.worker
+# Celery worker image: runs the full recon/scan pipeline. Includes all
+# scanner binaries the pipeline shells out to. Runs as root with
+# NET_RAW/NET_ADMIN capabilities (granted via docker-compose.yml) so
+# masscan/nmap raw-socket operations work without the sudo/NOPASSWD
+# dance required on the bare VM (see scanners/masscan.py, scanners/nmap.py
+# RUNNING_IN_DOCKER toggle).
+
+FROM python:3.13-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    RUNNING_IN_DOCKER=1 \
+    GOPATH=/root/go \
+    PATH="/root/go/bin:/usr/local/go/bin:${PATH}"
+
+# --- System packages: build tools + apt-available scanners ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg wget git build-essential libpq-dev \
+        amass masscan nmap sqlmap trufflehog \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Go toolchain (needed to build the ProjectDiscovery/Go-based tools) ---
+ENV GO_VERSION=1.23.4
+RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz -o /tmp/go.tar.gz \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz \
+    && rm /tmp/go.tar.gz
+
+# --- Go-based scanner binaries ---
+RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest \
+    && go install -v github.com/projectdiscovery/katana/cmd/katana@latest \
+    && go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
+    && go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest \
+    && go install -v github.com/ffuf/ffuf/v2@latest \
+    && go install -v github.com/hahwul/dalfox/v2@latest \
+    && go install -v github.com/sensepost/gowitness@latest
+
+# nuclei needs its template repo; pre-fetch at build time so the first
+# real scan doesn't stall downloading templates.
+RUN nuclei -update-templates -silent || true
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# The Go-built httpx binary must take precedence over the pip-installed
+# httpx Python package's CLI shim (see project memory: pip httpx CLI
+# shadowing the Go binary on the bare VM — same issue applies here).
+ENV HTTPX_GO_BINARY=/root/go/bin/httpx
+
+CMD ["celery", "-A", "worker.celery.celery_app", "worker", "--loglevel=info"]

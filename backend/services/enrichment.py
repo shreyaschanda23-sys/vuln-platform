@@ -48,13 +48,19 @@ def fetch_cvss(cve_id: str, client: httpx.Client) -> float | None:
         if not vulns:
             return None
 
-        metrics = vulns[0]["cve"].get("metrics", {})
+        metrics = vulns[0].get("cve", {}).get("metrics", {})
         for key in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
-            if key in metrics and metrics[key]:
-                return float(metrics[key][0]["cvssData"]["baseScore"])
+            entries = metrics.get(key)
+            if entries:
+                base_score = entries[0].get("cvssData", {}).get("baseScore")
+                if base_score is not None:
+                    return float(base_score)
         return None
     except httpx.HTTPError as e:
         logger.warning(f"NVD lookup failed for {cve_id}: {e}")
+        return None
+    except (KeyError, IndexError, TypeError, ValueError) as e:
+        logger.warning(f"NVD response malformed for {cve_id}: {e}")
         return None
     finally:
         time.sleep(_NVD_DELAY)
@@ -71,6 +77,9 @@ def fetch_epss(cve_id: str, client: httpx.Client) -> float | None:
         return float(data[0]["epss"])
     except httpx.HTTPError as e:
         logger.warning(f"EPSS lookup failed for {cve_id}: {e}")
+        return None
+    except (KeyError, IndexError, TypeError, ValueError) as e:
+        logger.warning(f"EPSS response malformed for {cve_id}: {e}")
         return None
 
 
@@ -97,20 +106,34 @@ def _load_kev_catalog(client: httpx.Client) -> set[str]:
 def is_in_kev(cve_id: str, client: httpx.Client) -> bool:
     return cve_id in _load_kev_catalog(client)
 
-def enrich_finding(finding: Finding, client: httpx.Client) -> Finding:
-    """Enrich a single finding in-place with CVSS, EPSS, and KEV status."""
+
+def enrich_finding(finding: Finding, client: httpx.Client, cve_cache: dict[str, dict] | None = None) -> Finding:
+    """
+    Enrich a single finding in-place with CVSS, EPSS, and KEV status.
+
+    cve_cache: optional dict shared across a batch (keyed by cve_id) so the
+    same CVE isn't re-fetched from NVD/EPSS for every host it appears on —
+    critical given the 6s/req NVD throttle when no API key is set.
+    """
     if not finding.cve_id:
         return finding
 
     finding.cve_id = finding.cve_id.upper()
+    cache = cve_cache if cve_cache is not None else {}
+    cached = cache.get(finding.cve_id)
+
+    if cached is None:
+        cvss = fetch_cvss(finding.cve_id, client) if finding.cvss_score is None else finding.cvss_score
+        epss = fetch_epss(finding.cve_id, client) if finding.epss_score is None else finding.epss_score
+        kev = is_in_kev(finding.cve_id, client)
+        cached = {"cvss": cvss, "epss": epss, "kev": kev}
+        cache[finding.cve_id] = cached
 
     if finding.cvss_score is None:
-        finding.cvss_score = fetch_cvss(finding.cve_id, client)
-
+        finding.cvss_score = cached["cvss"]
     if finding.epss_score is None:
-        finding.epss_score = fetch_epss(finding.cve_id, client)
-
-    finding.kev_status = is_in_kev(finding.cve_id, client)
+        finding.epss_score = cached["epss"]
+    finding.kev_status = cached["kev"]
 
     return finding
 
@@ -124,13 +147,20 @@ def enrich_scan_findings(scan_id: int, db: Session) -> int:
     )
 
     count = 0
+    cve_cache: dict[str, dict] = {}
     with httpx.Client() as client:
         for finding in findings:
-            enrich_finding(finding, client)
+            try:
+                enrich_finding(finding, client, cve_cache=cve_cache)
+            except Exception as e:
+                # Don't let one bad finding kill enrichment for the rest of
+                # the scan — log and move on, finding just stays un-enriched.
+                logger.error(f"Enrichment failed for finding {finding.id} ({finding.cve_id}): {e}")
             count += 1
             if count % 10 == 0:
                 db.commit()  # checkpoint periodically for long scans
 
     db.commit()
-    logger.info(f"Enriched {count} findings for scan {scan_id}")
+    unique_cves = len(cve_cache)
+    logger.info(f"Enriched {count} findings for scan {scan_id} ({unique_cves} unique CVEs looked up)")
     return count

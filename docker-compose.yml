@@ -1,0 +1,94 @@
+
+services:
+  postgres:
+    image: postgres:18
+    container_name: vulnplatform-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vulnuser
+      POSTGRES_PASSWORD: vulnpass123
+      POSTGRES_DB: vulnplatform
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vulnuser -d vulnplatform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: vulnplatform-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: vulnplatform-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://vulnuser:vulnpass123@postgres:5432/vulnplatform
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.worker
+    container_name: vulnplatform-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://vulnuser:vulnpass123@postgres:5432/vulnplatform
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Scanners like masscan/nmap need raw socket access. Running the
+    # worker container as root with these capabilities avoids reproducing
+    # the sudoers/NOPASSWD debugging we had to do on the bare VM — inside
+    # a container, root + explicit capabilities is the standard approach.
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    command: celery -A worker.celery.celery_app worker --loglevel=info
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/Dockerfile.frontend
+    container_name: vulnplatform-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+
+volumes:
+  pgdata:

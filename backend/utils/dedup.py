@@ -16,12 +16,19 @@ def _finding_key(finding: Finding) -> tuple:
     Identity key for a finding: same host + port + endpoint + cve/template
     is considered the same underlying issue, even if reported by different
     tools or in different scan stages.
+
+    When neither cve_id nor template_id is set (e.g. some sqlmap/dalfox
+    results), fall back to including description so two distinct
+    vulnerabilities on the same endpoint don't collide into one key.
     """
+    identifier = finding.cve_id or finding.template_id
+    if identifier is None:
+        identifier = ("desc", (finding.description or "")[:200])
     return (
         finding.host,
         finding.port,
         finding.endpoint,
-        finding.cve_id or finding.template_id,
+        identifier,
     )
 
 
@@ -63,12 +70,17 @@ def find_persistent_finding(finding: Finding, domain_id: int, db: Session) -> Fi
     Given a newly discovered finding, check if an equivalent finding exists
     on a previous scan of the same domain (used by the diff engine in
     Phase 7, but the lookup lives here since it's dedup logic).
+
+    Checks candidates in discovered_at order (most recent first) and
+    returns the first one whose full key actually matches — rather than
+    grabbing the single most-recent host/port/endpoint match and hoping
+    its cve/template also lines up.
     """
     from models.scan import Scan  # local import to avoid circular import
 
     key = _finding_key(finding)
 
-    candidate = (
+    candidates = (
         db.query(Finding)
         .join(Scan, Finding.scan_id == Scan.id)
         .filter(
@@ -81,9 +93,11 @@ def find_persistent_finding(finding: Finding, domain_id: int, db: Session) -> Fi
             )
         )
         .order_by(Finding.discovered_at.desc())
-        .first()
+        .all()
     )
 
-    if candidate and _finding_key(candidate) == key:
-        return candidate
+    for candidate in candidates:
+        if _finding_key(candidate) == key:
+            return candidate
+
     return None

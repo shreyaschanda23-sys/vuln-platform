@@ -3,8 +3,9 @@ same domain to surface new, resolved, and persistent vulnerabilities."""
 from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
-from models.scan import Scan
+from models.scan import Scan, ScanStatus
 from models.finding import Finding
+from utils.dedup import _finding_key  # reuse the single source of truth for identity keys
 
 
 @dataclass
@@ -14,14 +15,10 @@ class ScanDiff:
     persistent: list[Finding] = field(default_factory=list)
 
 
-def _finding_key(f: Finding) -> tuple:
-    return (f.host, f.port, f.endpoint, f.cve_id or f.template_id)
-
-
 def get_previous_scan(scan: Scan, db: Session) -> Scan | None:
     return (
         db.query(Scan)
-        .filter(Scan.domain_id == scan.domain_id, Scan.id != scan.id, Scan.status == "complete")
+        .filter(Scan.domain_id == scan.domain_id, Scan.id != scan.id, Scan.status == ScanStatus.complete)
         .filter(Scan.started_at < scan.started_at)
         .order_by(Scan.started_at.desc())
         .first()

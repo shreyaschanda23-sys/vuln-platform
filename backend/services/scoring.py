@@ -17,21 +17,35 @@ _EPSS_WEIGHT = 0.3
 _EXPOSURE_WEIGHT = 0.2
 _KEV_FLOOR = 90.0  # KEV-listed findings never score below this
 
+_SEVERITY_FALLBACK = {"critical": 9.5, "high": 8.0, "medium": 5.0, "low": 2.5, "info": 0.0, "informational": 0.0}
+
+
+def _clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(value, hi))
+
 
 def _cvss_component(finding: Finding) -> float:
-    """Normalize CVSS (0-10) to 0-100."""
+    """Normalize CVSS (0-10) to 0-100. Clamps out-of-range/bad data."""
     if finding.cvss_score is None:
-        # No CVSS data — fall back to severity string if present.
-        fallback = {"critical": 9.5, "high": 8.0, "medium": 5.0, "low": 2.5}
-        return fallback.get((finding.severity or "").lower(), 3.0) * 10
-    return finding.cvss_score * 10
+        sev = (finding.severity or "").lower()
+        if sev and sev not in _SEVERITY_FALLBACK:
+            logger.warning(f"Finding {finding.id}: unrecognized severity '{finding.severity}', defaulting to low")
+        fallback = _SEVERITY_FALLBACK.get(sev, 2.5)
+        return fallback * 10
+    cvss = _clamp(finding.cvss_score, 0.0, 10.0)
+    if cvss != finding.cvss_score:
+        logger.warning(f"Finding {finding.id}: cvss_score {finding.cvss_score} out of range, clamped to {cvss}")
+    return cvss * 10
 
 
 def _epss_component(finding: Finding) -> float:
-    """EPSS is already 0-1 probability; scale to 0-100."""
+    """EPSS is a 0-1 probability; scale to 0-100. Clamps bad API data."""
     if finding.epss_score is None:
         return 0.0
-    return finding.epss_score * 100
+    epss = _clamp(finding.epss_score, 0.0, 1.0)
+    if epss != finding.epss_score:
+        logger.warning(f"Finding {finding.id}: epss_score {finding.epss_score} out of range, clamped to {epss}")
+    return epss * 100
 
 
 def _exposure_component(finding: Finding) -> float:
@@ -61,7 +75,7 @@ def calculate_risk_score(finding: Finding) -> float:
     if finding.kev_status:
         score = max(score, _KEV_FLOOR)
 
-    return round(min(score, 100.0), 2)
+    return round(_clamp(score, 0.0, 100.0), 2)
 
 
 def score_finding(finding: Finding) -> Finding:

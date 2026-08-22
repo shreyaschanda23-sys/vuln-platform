@@ -10,12 +10,14 @@ class NucleiScanner(BaseScannerWrapper):
 
     def build_args(self, target: str, **kwargs) -> list[str]:
         severity = kwargs.get("severity", "critical,high,medium,low")
+        timeout = kwargs.get("request_timeout", "10")
         args = [
             self.binary_name,
             "-u", target,
             "-jsonl",
             "-silent",
             "-severity", severity,
+            "-timeout", timeout,
         ]
         tags = kwargs.get("tags")
         if tags:
