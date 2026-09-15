@@ -7,10 +7,16 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from models import Base
+from app.config import settings
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Override the ini file's sqlalchemy.url with the real value from .env at
+# runtime, so alembic.ini itself never needs to contain a real credential
+# (important since alembic.ini is committed to version control).
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 target_metadata = Base.metadata
 
