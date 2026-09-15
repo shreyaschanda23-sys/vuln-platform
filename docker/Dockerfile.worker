@@ -1,29 +1,30 @@
 # docker/Dockerfile.worker
+# Multi-stage build with pinned tool versions to avoid chasing @latest's
+# ever-increasing minimum Go version requirements.
+
+FROM golang:1.23-bookworm AS tools
+
+RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@v2.6.6 \
+    && go install -v github.com/projectdiscovery/katana/cmd/katana@v1.0.5 \
+    && go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.3.2 \
+    && go install -v github.com/projectdiscovery/httpx/cmd/httpx@v1.6.9 \
+    && go install -v github.com/ffuf/ffuf/v2@v2.1.0 \
+    && go install -v github.com/hahwul/dalfox/v2@v2.11.0 \
+    && go install -v github.com/sensepost/gowitness@2.5.1 \
+    && go install -v github.com/owasp-amass/amass/v4/cmd/amass@v4.2.0
+
 FROM python:3.13-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
     RUNNING_IN_DOCKER=1 \
-    GOPATH=/root/go \
-    PATH="/root/go/bin:/usr/local/go/bin:${PATH}"
+    PATH="/usr/local/bin:${PATH}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl gnupg wget git build-essential libpq-dev \
+        ca-certificates curl build-essential libpq-dev \
         masscan nmap sqlmap \
     && rm -rf /var/lib/apt/lists/*
 
-ENV GO_VERSION=1.23.4
-RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz -o /tmp/go.tar.gz \
-    && tar -C /usr/local -xzf /tmp/go.tar.gz \
-    && rm /tmp/go.tar.gz
-
-RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest \
-    && go install -v github.com/projectdiscovery/katana/cmd/katana@latest \
-    && go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
-    && go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest \
-    && go install -v github.com/ffuf/ffuf/v2@latest \
-    && go install -v github.com/hahwul/dalfox/v2@latest \
-    && go install -v github.com/sensepost/gowitness@latest \
-    && go install -v github.com/owasp-amass/amass/v4/...@master
+COPY --from=tools /go/bin/* /usr/local/bin/
 
 RUN curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
     | sh -s -- -b /usr/local/bin
@@ -37,6 +38,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV HTTPX_GO_BINARY=/root/go/bin/httpx
+ENV HTTPX_GO_BINARY=/usr/local/bin/httpx
 
 CMD ["celery", "-A", "worker.celery.celery_app", "worker", "--loglevel=info"]
